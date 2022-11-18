@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>IMA Test Page</title>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <h1>VAST / IMA Test Page</h1>
+    <label>Enter VAST URL:</label>
+    <input id="vast-url-input" type="text" style="width: 50%"></input>
+    <button id="test-button" onclick="testVastURL()">Test</button><br/><br/>
+    <a href="#" onclick="setExample(1)">Example 1</a>
+    <a href="#" onclick="setExample(2)">Example 2</a>
+    <a href="#" onclick="setExample(3)">Example 3</a>
+    <a href="#" onclick="setExample(4)">Example 4</a>
+    <span style="margin-left: 17rem; display: none" id="refresh-notice">(please refresh to test again)</span>
+
+    <div id="rest-of-the-page" style="display: none">
+      <p>Audio Player:</p>
+      <audio id="audio-player" controls><source src="./pink-panther.wav"></audio>
+      <div id="ad-container" style="display: none"></div><br/><br/>
+      <p>Trace Log:</p>
+      <textarea id="status-text" rows=29 cols=150></textarea>
+      <script src="//imasdk.googleapis.com/js/sdkloader/ima3.js"></script>
+    </div>
+
+    <script>
+      const vastUrlInput = document.getElementById("vast-url-input");
+
+      const setExample = (exampleNumber) => {
+        vastUrlInput.value = {
+          1: "https://pubads.g.doubleclick.net/gampad/live/ads?iu=/22003923461/beyondwords2&description_url=http%3A%2F%2Fexample.com&tfcd=0&npa=0&sz=400x300&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&impl=s&correlator=",
+          2: "https://pubads.g.doubleclick.net/gampad/ads?iu=/134702932/0159-sportsnaut.com-audio&description_url=https%3A%2F%2Fwww.sportsnaut.com&tfcd=0&npa=0&ad_type=audio&sz=1x1&max_ad_duration=30000&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&impl=s&correlator=",
+          3: "https://pubads.g.doubleclick.net/gampad/ads?slotname=/134702932/0159-sportsnaut.com-audio&sz=1x1&unviewed_position_start=1&impl=s&env=vp&gdfp_req=1&ad_rule=0&output=xml_vast2&video_url_to_fetch=https://www.sportsnaut.com&useragent=Mozilla/5.0+(Macintosh%3B+Intel+Mac+OS+X+10_15_7)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/107.0.0.0+Safari/537.36,gzip(gfe)&vad_type=linear&vpos=preroll&pod=1&vrid=1330533&pmnd=0&pmxd=30000&pmad=1&max_ad_duration=30000&ad_type=audio&npa=false&kfa=0&tfcd=0",
+          4: "https://pubads.g.doubleclick.net/gampad/live/ads?iu=/6305169/Newsmax/Audio&description_url=http%3A%2F%2Fnewsmax.com&tfcd=0&npa=0&ad_type=audio&sz=1x1&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&correlator=[placeholder]&vpmute=0&vpa=click&url=http%3A%2F%2Fnewsmax.com&vpos=preroll",
+        }[exampleNumber];
+      };
+
+      const testVastURL = () => {
+        if (vastUrlInput.value.length === 0) { return; }
+
+        const testButton = document.getElementById("test-button");
+        const refreshNotice = document.getElementById("refresh-notice");
+        const restOfThePage = document.getElementById("rest-of-the-page");
+
+        google.ima.settings.setVpaidMode(google.ima.ImaSdkSettings.VpaidMode.ENABLED);
+        testButton.setAttribute("disabled", "disabled");
+        refreshNotice.style.display = "inline";
+        restOfThePage.style.display = "block";
+
+        const audioPlayer = document.getElementById("audio-player");
+        const adContainer = document.getElementById("ad-container");
+        const statusText = document.getElementById("status-text");
+        const log = (message) => { statusText.value += message + "\n"; };
+
+
+        const adDisplayContainer = new google.ima.AdDisplayContainer(adContainer, audioPlayer);
+        const adsLoader = new google.ima.AdsLoader(adDisplayContainer);
+        const adsRequest = new google.ima.AdsRequest();
+
+        let adManager = null;
+        let adsLoaded = false;
+
+        log("Registering event listeners");
+        audioPlayer.addEventListener("play", e => onPlay(e));
+        audioPlayer.addEventListener("ended", e => onEnded(e));
+        adsLoader.addEventListener(google.ima.AdsManagerLoadedEvent.Type.ADS_MANAGER_LOADED, e => onAdsManagerLoaded(e), false);
+        adsLoader.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, e => onAdError(e), false);
+
+        const onPlay = (event) => {
+          log("onPlay was called");
+
+          if (adsLoaded) { return; }
+          adsLoaded = true;
+
+          log("onPlay was intercepted");
+          event.preventDefault();
+
+          log("Loading ads");
+          audioPlayer.load();
+          adDisplayContainer.initialize();
+
+          try {
+            adsManager.init(1, 1, google.ima.ViewMode.NORMAL);
+            adsManager.start();
+            log("Ad load succeeded");
+          } catch (adError) {
+            audioPlayer.play();
+            log("Ad load failed");
+          }
+        };
+
+        const onEnded = () => {
+          log("onEnded was called");
+          adsLoader.contentComplete();
+        };
+
+        const onAdsManagerLoaded = (event) => {
+          log("onAdsManagerLoaded was called");
+          adsManager = event.getAdsManager(audioPlayer);
+
+          adsManager.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, onAdError);
+          adsManager.addEventListener(google.ima.AdEvent.Type.CONTENT_PAUSE_REQUESTED, () => audioPlayer.pause());
+          adsManager.addEventListener(google.ima.AdEvent.Type.CONTENT_RESUME_REQUESTED, () => audioPlayer.play());
+          adsManager.addEventListener(google.ima.AdEvent.Type.LOADED, event => log("\nonAdLoaded: " + JSON.stringify(event.B) + "\n"));
+          adsManager.addEventListener(google.ima.AdEvent.Type.AD_PROGRESS, event => log("onAdProgress: " + JSON.stringify(event.B) + "\n"));
+        };
+
+        const onAdError = (event) => {
+          log("onAdError was called: " + event.getError());
+          log("\nbacktrace: " + event.j.stack + "\n");
+
+          if (typeof adsManager !== 'undefined') {
+            adsManager.destroy();
+          }
+        };
+
+        log("Setting VAST URL:")
+        adsRequest.adTagUrl = vastUrlInput.value;
+        log("\n" + adsRequest.adTagUrl + "\n");
+        log("Requesting ads:")
+        adsLoader.requestAds(adsRequest);
+      };
+    </script>
+
+    <style>
+      a { color: blue; margin-right: 2rem; }
+    </style>
+  </body>
+</html>
